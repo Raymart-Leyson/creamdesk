@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { getUserFromHeader } from '@/lib/auth-utils'
 import OpenAI from 'openai'
-import pdfParse from 'pdf-parse'
+
+// pdf-parse will be required inside the handler
+// const pdfParse = require('pdf-parse')
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY || 'mock-key',
@@ -24,6 +26,7 @@ const MOCK_RESPONSE = {
 
 export async function POST(request: Request) {
     try {
+        const pdfParse = require('pdf-parse')
         const user = await getUserFromHeader(request)
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

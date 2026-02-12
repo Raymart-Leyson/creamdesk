@@ -1,10 +1,12 @@
+import dynamic from 'next/dynamic'
 import NotesApp from './NotesApp'
 import TasksApp from './TasksApp'
 import DriveApp from './DriveApp'
 import CalendarApp from './CalendarApp'
 import PdfApp from './PdfApp'
 import SettingsApp from './SettingsApp'
-import DocsApp from './DocsApp'
+// Use dynamic import for DocsApp to avoid SSR issues with pdfjs-dist
+const DocsApp = dynamic(() => import('./DocsApp'), { ssr: false })
 import StudyApp from './StudyApp'
 
 import { AppId } from '@/store/useStore'
