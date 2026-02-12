@@ -1,26 +1,71 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Cream Palette */
+  --bg-cream: #FFF4E6;
+  --bg-surface: #FFE8CF;
+  --accent-espresso: #3A2A20;
+  --accent-peach: #FFB38A;
+  --highlight-butter: #FFE28A;
+
+  --foreground: #3A2A20;
+  /* Default text color is Espresso */
+
+  /* Shared UI Tokens */
+  --radius-window: 16px;
+  --border-thick: 2px solid var(--accent-espresso);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark-choco {
+  /* Dark Chocolate Theme */
+  --bg-cream: #2A1F18;
+  /* Dark Brown BG */
+  --bg-surface: #3D2E24;
+  /* Slightly lighter brown surface */
+  --accent-espresso: #E8DCCF;
+  /* Light Cream Text/Borders */
+  --accent-peach: #8B5E3C;
+  /* Muted Peach/Brown Accent */
+  --highlight-butter: #D4A373;
+  /* Gold/Butter Highlight */
+  --foreground: #E8DCCF;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  --color-cream-bg: var(--bg-cream);
+  --color-cream-surface: var(--bg-surface);
+  --color-cream-accent: var(--accent-espresso);
+  --color-cream-secondary: var(--accent-peach);
+  --color-cream-highlight: var(--highlight-butter);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui;
+
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-cream);
+  color: var(--accent-espresso);
+  font-family: var(--font-sans);
+}
+
+/* Custom Scrollbar for Windows */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--accent-espresso);
+  border-radius: 4px;
+  border: 2px solid var(--bg-cream);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-peach);
 }

@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CreamDesk - Connector Hub
 
-## Getting Started
+A "Desktop-like" web app built with Next.js 14+, Tailwind CSS, Supabase, and Framer Motion.
 
-First, run the development server:
+## Features
+- **Desktop Interface**: Window management, Dock, Desktop Icons.
+- **Google Integration**: Connect Drive and Calendar (Read-only listing).
+- **Workspaces**: Manage projects, notes, and tasks.
+- **PDF Intelligence**: Upload PDFs to generate summaries and flashcards via AI (OpenAI).
+- **Creamy UI**: Custom "Cream" theme with thick borders and playful animations.
+
+## Setup Instructions
+
+### 1. Prerequisites
+- Node.js 18+
+- Supabase Account
+- Google Cloud Console Project (for OAuth)
+- OpenAI API Key (optional, for PDF AI)
+
+### 2. Environment Variables
+Copy `.env.example` to `.env.local` and fill in the values:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Required keys:
+- `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase Project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase Anon Key
+- `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase Service Role Key (for Admin API routes)
+- `GOOGLE_CLIENT_ID`: Google OAuth Client ID
+- `GOOGLE_CLIENT_SECRET`: Google OAuth Client Secret
+- `NEXT_PUBLIC_APP_URL`: Your local URL (e.g., http://localhost:3000)
+- `OPENAI_API_KEY`: Your OpenAI Key (optional)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Database Setup (Supabase)
+Run the SQL migration in `supabase/migrations/20240101000000_initial_schema.sql` using the Supabase SQL Editor.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This handles:
+- Tables (profiles, workspaces, notes, tasks, etc.)
+- RLS Policies
+- Storage Bucket (You must also create 'pdfs' bucket manually if SQL extension for storage is not enabled, though SQL tries to insert)
 
-## Learn More
+**Important**: Ensure you create a public (or private) bucket named `pdfs` in Supabase Storage if the SQL script doesn't automatically do it.
 
-To learn more about Next.js, take a look at the following resources:
+### 4. Google OAuth Configuration
+1. Go to Google Cloud Console.
+2. Create Credentials > OAuth Client ID (Web Application).
+3. Add Redirect URI: `http://localhost:3000/api/oauth/google/callback`.
+4. Enable APIs: Google Drive API, Google Calendar API.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 5. Run Locally
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm install
+npm run dev
+```
 
-## Deploy on Vercel
+Visit `http://localhost:3000`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Architecture
+- **Tech Stack**: Next.js App Router, Zustand (State), Tailwind v4 (Styling), Supabase (Backend).
+- **Window Manager**: `src/store/useStore.ts` + `src/components/desktop/WindowManager.tsx`.
+- **Apps**: Located in `src/apps/`. Each app is a component rendered inside a `WindowContainer`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Design System
+- **Colors**: Cream (#FFF4E6), Espresso (#3A2A20), Peach (#FFB38A).
+- **Typography**: Geist Sans / Mono.
+- **Components**: Custom "Cream" components in `src/components/ui/CreamComponents.tsx`.
+
+## License
+MIT
