@@ -4,12 +4,21 @@ import OpenAI from "openai"
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { MAX_CHUNK_SIZE } from '@/lib/billing-utils'
 
+type QuizType = 'multiple_choice' | 'identification' | 'enumeration' | 'mixed'
+
 export async function generateStudyMaterials(
     content: string,
-    type: 'notes' | 'flashcards',
+    type: 'notes' | 'flashcards' | 'quiz',
     documentId: string,
     userId: string,
-    flashcardRange?: { min: number; max: number }
+    options?: {
+        // flashcard options (kept as before)
+        min?: number
+        max?: number
+        // quiz options (new)
+        quizType?: QuizType
+        itemCount?: number
+    }
 ) {
     const supabase = supabaseAdmin
 
@@ -23,11 +32,17 @@ export async function generateStudyMaterials(
             throw new Error("Document content is too short or empty to generate study materials.")
         }
 
-        // Chunking for long documents to ensure complete coverage (imported MAX_CHUNK_SIZE)
-        const chunks: string[] = []
+        // ─── Quiz goes through its own path (no chunking needed — uses notes) ─
+        if (type === 'quiz') {
+            return generateQuiz(openai, supabase, cleanText, documentId, userId, {
+                quizType: options?.quizType ?? 'mixed',
+                itemCount: options?.itemCount ?? 10,
+            })
+        }
 
+        // ─── Chunking for long documents ──────────────────────────────────────
+        const chunks: string[] = []
         if (cleanText.length > MAX_CHUNK_SIZE) {
-            // Split into chunks with overlap to avoid missing content at boundaries
             for (let i = 0; i < cleanText.length; i += MAX_CHUNK_SIZE) {
                 const chunk = cleanText.substring(i, i + MAX_CHUNK_SIZE + 500) // 500 char overlap
                 chunks.push(chunk)
@@ -36,6 +51,7 @@ export async function generateStudyMaterials(
             chunks.push(cleanText)
         }
 
+        // ─── Build prompts ─────────────────────────────────────────────────────
         let systemPrompt = ''
         let baseUserPrompt = ''
         let temperature = 0.7
@@ -48,6 +64,7 @@ CRITICAL REQUIREMENTS:
 2. **Identify ALL distinct topics/categories** in the content
 3. **Be thorough and detailed** - Students will use these notes to study for exams
 4. **Include everything testable** - Definitions, concepts, processes, examples, important names, dates, formulas, etc.
+5. **STRICT RULE: Use ONLY information explicitly stated in the document. Do NOT add outside knowledge, extra definitions, or context not found in the source material.**
 
 For each topic, create a NOTE with:
 - A clear, descriptive title
@@ -55,8 +72,7 @@ For each topic, create a NOTE with:
   * Use numbered lists (1., 2., 3.) for multiple points
   * Use \\n for line breaks between points and paragraphs
   * Include ALL key details, not just summaries
-  * Add definitions, examples, and context
-- Focus ONLY on information in the document
+  * Add definitions, examples, and context ONLY if they appear in the document
 - Organize information logically for exam preparation
 
 REQUIRED JSON FORMAT - Each note object MUST have "title" and "content":
@@ -69,18 +85,19 @@ REQUIRED JSON FORMAT - Each note object MUST have "title" and "content":
 
 DO NOT CREATE FLASHCARDS. DO NOT use "front" and "back" fields. ONLY use "title" and "content".
 
-IMPORTANT: 
+IMPORTANT:
 - Use \\n for line breaks
 - Be COMPREHENSIVE - students are relying on these notes for exams
-- Don't summarize too much - include all testable details`
+- Don't summarize too much - include all testable details
+- Stay strictly within the document's content`
 
-            baseUserPrompt = `Create comprehensive exam preparation STUDY NOTES (NOT flashcards) from this content. Include ALL important information, definitions, concepts, and testable details:`
-
+            baseUserPrompt = `Create comprehensive exam preparation STUDY NOTES (NOT flashcards) from this content. Include ALL important information, definitions, concepts, and testable details that appear in the document:`
             temperature = 0.7
+
         } else {
-            // Flashcards - generated FROM existing notes
-            const min = flashcardRange?.min || 15
-            const max = flashcardRange?.max || 25
+            // flashcards — generated from notes content passed in
+            const min = options?.min ?? 15
+            const max = options?.max ?? 25
 
             systemPrompt = `You are an exam preparation expert creating FLASHCARDS (NOT study notes).
 
@@ -93,6 +110,7 @@ CRITICAL REQUIREMENTS:
    - Concept questions ("Explain Y")
    - Application questions ("How does Z work?")
    - Identification questions ("What term describes...?")
+5. **STRICT RULE: Questions and answers must come ONLY from the provided notes. Do NOT add knowledge from outside the notes.**
 
 REQUIRED JSON FORMAT - Each flashcard object MUST have "front" and "back":
 [
@@ -112,14 +130,13 @@ Rules:
 - ONLY create flashcards about the actual subject matter
 - Create ${min}-${max} flashcards to ensure thorough coverage`
 
-            baseUserPrompt = `Create comprehensive exam preparation FLASHCARDS (NOT study notes) from these study notes. Cover ALL important concepts, definitions, and testable information:`
-
+            baseUserPrompt = `Create comprehensive exam preparation FLASHCARDS (NOT study notes) from these study notes. Cover ALL important concepts, definitions, and testable information from the notes only:`
             temperature = 0.3
         }
 
-        // Process all chunks and collect results
+        // ─── Process all chunks ────────────────────────────────────────────────
         const allResults: any[] = []
-        let previousChunkSummary = '' // To maintain continuity
+        let previousChunkSummary = ''
 
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i]
@@ -129,12 +146,9 @@ Rules:
 
             if (isMultiChunk) {
                 userPrompt += `\n\n[Part ${i + 1} of ${chunks.length}]`
-
-                // Add context from previous chunk for continuity
                 if (i > 0 && previousChunkSummary) {
                     userPrompt += `\n\n[Context from previous section: ${previousChunkSummary}]`
                 }
-
                 userPrompt += `\n\n`
             } else {
                 userPrompt += `\n\n`
@@ -143,7 +157,9 @@ Rules:
             if (type === 'notes') {
                 userPrompt += `${chunk}\n\nGenerate detailed STUDY NOTES (with "title" and "content" fields) for ALL topics in this content. Use line breaks (\\n) for formatting. Return ONLY valid JSON array of note objects.`
             } else {
-                const min = flashcardRange?.min || 15; const max = flashcardRange?.max || 25; userPrompt += `---STUDY NOTES START---\n${chunk}\n---STUDY NOTES END---\n\nCreate ${min}-${max} FLASHCARDS (with "front" and "back" fields) covering ALL important concepts. Return ONLY the JSON array of flashcard objects.`
+                const min = options?.min ?? 15
+                const max = options?.max ?? 25
+                userPrompt += `---STUDY NOTES START---\n${chunk}\n---STUDY NOTES END---\n\nCreate ${min}-${max} FLASHCARDS (with "front" and "back" fields) covering ALL important concepts from the notes above. Return ONLY the JSON array of flashcard objects.`
             }
 
             try {
@@ -161,13 +177,10 @@ Rules:
                 const parsed = parseStudyJSON(resultText)
 
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    // Validate structure based on type
                     const validItems = parsed.filter(item => {
                         if (type === 'notes') {
-                            // Notes must have 'title' and 'content'
                             return item.title && item.content && !item.front && !item.back
                         } else {
-                            // Flashcards must have 'front' and 'back'
                             return item.front && item.back && !item.title && !item.content
                         }
                     })
@@ -175,7 +188,6 @@ Rules:
                     if (validItems.length > 0) {
                         allResults.push(...validItems)
 
-                        // Create summary for next chunk continuity
                         if (isMultiChunk && i < chunks.length - 1) {
                             if (type === 'notes') {
                                 const lastTopics = validItems.slice(-2).map((n: any) => n.title).join(', ')
@@ -196,25 +208,21 @@ Rules:
             throw new Error("Failed to generate valid study materials from the document.")
         }
 
-        // Save to Database
+        // ─── Save to Database ──────────────────────────────────────────────────
         const dbType = type === 'notes' ? 'note' : 'flashcard'
 
-        // Delete old materials of this type for this doc
         const { error: deleteError } = await supabase
             .from('study_materials')
             .delete()
             .match({ document_id: documentId, type: dbType })
 
-        if (deleteError) {
-            console.error("DB Delete Error:", deleteError)
-        }
+        if (deleteError) console.error("DB Delete Error:", deleteError)
 
-        // Insert new batch
         const rows: any[] = allResults.map(item => ({
             user_id: userId,
             document_id: documentId,
             type: dbType,
-            content: item // { title, content } or { front, back }
+            content: item
         }))
 
         const { data: insertedData, error: insertError } = await supabase
@@ -222,26 +230,150 @@ Rules:
             .insert(rows)
             .select()
 
-        if (insertError) {
-            console.error("DB Save Error:", insertError)
-            throw new Error(`Database Save Failed: ${insertError.message}`)
-        }
+        if (insertError) throw new Error(`Database Save Failed: ${insertError.message}`)
 
-        // Return the actual saved data with DB IDs
         if (insertedData) {
-            return insertedData.map(row => ({
-                ...row.content,
-                db_id: row.id
-            }))
+            return insertedData.map(row => ({ ...row.content, db_id: row.id }))
         }
 
         return []
+
     } catch (error: any) {
-        console.error('OpenAI API Error:', error)
+        console.error('Generation Error:', error)
         throw new Error(error.message || 'Failed to generate study materials')
     }
 }
 
+// ─── Quiz Generator ─────────────────────────────────────────────────────────
+// Quiz receives the already-concatenated notes text (not raw doc content).
+// This keeps questions grounded in what the student has actually studied.
+async function generateQuiz(
+    openai: OpenAI,
+    supabase: ReturnType<typeof supabaseAdmin>,
+    notesContent: string,
+    documentId: string,
+    userId: string,
+    options: { quizType: QuizType; itemCount: number }
+) {
+    const { quizType, itemCount } = options
+
+    const typeInstructions: Record<QuizType, string> = {
+        multiple_choice: `ALL ${itemCount} questions must be type "multiple_choice".
+Each has exactly 4 answer choices (strings in a "choices" array). Only one is correct.
+Distractors must be plausible but clearly wrong upon careful reading of the notes.`,
+
+        identification: `ALL ${itemCount} questions must be type "identification".
+Each asks the student to name, identify, or state a specific term, concept, or fact from the notes.
+The answer must be a short phrase (1–5 words).`,
+
+        enumeration: `ALL ${itemCount} questions must be type "enumeration".
+Each asks the student to list multiple items: steps, types, characteristics, reasons, or examples.
+Each question must have 3–6 items in the "answers" array.`,
+
+        mixed: `Distribute the ${itemCount} questions proportionally:
+- ~40% type "multiple_choice" (4 choices, 1 correct answer string)
+- ~35% type "identification" (short 1–5 word answer string)
+- ~25% type "enumeration" (list of 3–6 items in answers array)
+This tests different cognitive levels of recall and understanding.`,
+    }
+
+    const systemPrompt = `You are an expert quiz maker for exam preparation.
+You receive study notes and create quiz questions to test student knowledge.
+
+STRICT RULES:
+- Create questions ONLY from the provided notes. Do NOT add outside knowledge.
+- Every question must be answerable using only the notes content.
+- Questions must test meaningful understanding, not trivial details.
+- Include a brief explanation for each question referencing the notes.
+- Do NOT write "according to the notes" or "the document says" inside question text.
+
+QUESTION TYPE INSTRUCTIONS:
+${typeInstructions[quizType]}
+
+REQUIRED JSON FORMAT — return ONLY a valid JSON array, no markdown fences, no extra text:
+[
+  {
+    "type": "multiple_choice",
+    "question": "Question text?",
+    "choices": ["Option A", "Option B", "Option C", "Option D"],
+    "answer": "Option A",
+    "explanation": "Brief explanation from the notes."
+  },
+  {
+    "type": "identification",
+    "question": "Question text?",
+    "answer": "Short answer",
+    "explanation": "Brief explanation from the notes."
+  },
+  {
+    "type": "enumeration",
+    "question": "List the [X] [items] of [topic]:",
+    "answers": ["Item 1", "Item 2", "Item 3"],
+    "explanation": "Brief explanation from the notes."
+  }
+]
+
+Generate exactly ${itemCount} questions. Spread them evenly across all major topics in the notes.`
+
+    const userPrompt = `Create exactly ${itemCount} quiz questions from these study notes.
+Cover all major topics. All questions must come strictly from the notes content below.
+
+---STUDY NOTES START---
+${notesContent}
+---STUDY NOTES END---
+
+Return ONLY the JSON array of question objects. No markdown fences, no explanation text outside the JSON.`
+
+    const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.4,
+        max_tokens: 6000,
+    })
+
+    const resultText = response.choices[0].message.content || ''
+    const parsed = parseStudyJSON(resultText)
+
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error("Failed to generate valid quiz questions from the notes.")
+    }
+
+    // Validate each question has the required fields
+    const validQuestions = parsed.filter(q => {
+        if (!q.type || !q.question) return false
+        if (q.type === 'multiple_choice') return Array.isArray(q.choices) && q.choices.length === 4 && q.answer
+        if (q.type === 'identification') return Boolean(q.answer)
+        if (q.type === 'enumeration') return Array.isArray(q.answers) && q.answers.length >= 2
+        return false
+    })
+
+    if (validQuestions.length === 0) {
+        throw new Error("Generated quiz had no valid questions. Please try again.")
+    }
+
+
+
+    // Save as a single row containing all questions
+    const { data: insertedData, error: insertError } = await supabase
+        .from('study_materials')
+        .insert({
+            user_id: userId,
+            document_id: documentId,
+            type: 'quiz',
+            content: { questions: validQuestions, quizType, itemCount },
+        })
+        .select()
+        .single()
+
+    if (insertError) throw new Error(`Database Save Failed: ${insertError.message}`)
+
+    return { ...insertedData, questions: validQuestions, quizType, itemCount, db_id: insertedData.id }
+}
+
+// ─── JSON parser (unchanged from original) ───────────────────────────────────
 function parseStudyJSON(text: string) {
     text = text.replace(/```json/g, '').replace(/```/g, '').trim()
     try {
@@ -259,4 +391,3 @@ function parseStudyJSON(text: string) {
         return []
     }
 }
-

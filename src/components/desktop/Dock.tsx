@@ -2,13 +2,13 @@
 import { useState } from 'react'
 import { useDesktopStore, AppId } from '@/store/useStore'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Folder, PenTool, CheckSquare, HardDrive, Calendar, Settings, FileText, ChevronUp, ChevronDown, GraduationCap } from 'lucide-react'
+import { Folder, PenTool, CheckSquare, Calendar, Settings, FileText, ChevronUp, ChevronDown, GraduationCap } from 'lucide-react'
 
 // Map AppId to Lucide Icon
 const ICON_MAP = {
     notes: PenTool,
     tasks: CheckSquare,
-    drive: HardDrive,
+
     calendar: Calendar,
     pdf: FileText,
     settings: Settings,

@@ -1,7 +1,7 @@
 import dynamic from 'next/dynamic'
 import NotesApp from './NotesApp'
 import TasksApp from './TasksApp'
-import DriveApp from './DriveApp'
+
 import CalendarApp from './CalendarApp'
 import PdfApp from './PdfApp'
 import SettingsApp from './SettingsApp'
@@ -14,7 +14,7 @@ import { AppId } from '@/store/useStore'
 export const Apps: Record<AppId, any> = {
     notes: NotesApp,
     tasks: TasksApp,
-    drive: DriveApp,
+
     calendar: CalendarApp,
     pdf: PdfApp,
     settings: SettingsApp,

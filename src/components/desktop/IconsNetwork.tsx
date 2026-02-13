@@ -1,7 +1,7 @@
 "use client"
 import DesktopIcon from './DesktopIcon'
 import { useDesktopStore, AppId } from '@/store/useStore'
-import { Folder, PenTool, CheckSquare, HardDrive, Calendar, Settings, FileText, GraduationCap } from 'lucide-react'
+import { Folder, PenTool, CheckSquare, Calendar, Settings, FileText, GraduationCap } from 'lucide-react'
 
 export default function IconsNetwork() {
     const { openWindow } = useDesktopStore()
@@ -9,7 +9,7 @@ export default function IconsNetwork() {
     const apps = [
         { id: 'notes' as AppId, label: 'Notes', icon: PenTool },
         { id: 'tasks' as AppId, label: 'Tasks', icon: CheckSquare },
-        { id: 'drive' as AppId, label: 'Drive', icon: HardDrive },
+
         { id: 'calendar' as AppId, label: 'Calendar', icon: Calendar },
         { id: 'docs' as AppId, label: 'Docs', icon: FileText },
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type AppId = 'drive' | 'calendar' | 'notes' | 'tasks' | 'pdf' | 'settings' | 'docs' | 'study'
+export type AppId = 'calendar' | 'notes' | 'tasks' | 'pdf' | 'settings' | 'docs' | 'study'
 
 export interface WindowState {
     id: string
