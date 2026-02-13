@@ -111,26 +111,28 @@ export default function MenuBar() {
                 <span className="font-black text-[var(--accent-espresso)] text-lg tracking-tighter cursor-pointer hover:scale-105 transition-transform">CreamDesk</span>
             </div>
 
-            {/* Center: Token Info */}
-            <div className="flex items-center gap-3">
-                {/* Token Display */}
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border-2 border-yellow-600 rounded-lg shadow-sm">
-                    <Coins size={14} className="text-yellow-700" />
-                    <span className="font-bold text-yellow-700 text-sm">{tokens}</span>
-                    <span className="text-yellow-600/50 text-xs">tokens</span>
-                </div>
-
-                {/* Buy Tokens Button */}
-                <Link href="/shop">
-                    <button className="px-3 py-1.5 bg-gradient-to-r from-yellow-400 to-orange-400 text-[var(--accent-espresso)] rounded-lg border-2 border-[var(--accent-espresso)] shadow-[2px_2px_0px_var(--accent-espresso)] hover:shadow-[3px_3px_0px_var(--accent-espresso)] hover:-translate-y-0.5 transition-all font-bold text-xs flex items-center gap-1.5">
-                        <Coins size={14} />
-                        Buy Tokens
-                    </button>
-                </Link>
-            </div>
-
             {/* Right: Utilities */}
             <div className="flex items-center gap-3 text-xs font-bold text-[var(--accent-espresso)]">
+                {/* Token Info */}
+                <div className="flex items-center gap-3">
+                    {/* Token Display */}
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border-2 border-yellow-600 rounded-lg shadow-sm">
+                        <Coins size={14} className="text-yellow-700" />
+                        <span className="font-bold text-yellow-700 text-sm">{tokens}</span>
+                        <span className="text-yellow-600/50 text-xs">tokens</span>
+                    </div>
+
+                    {/* Buy Tokens Button */}
+                    <Link href="/shop">
+                        <button className="px-3 py-1.5 bg-gradient-to-r from-yellow-400 to-orange-400 text-[var(--accent-espresso)] rounded-lg border-2 border-[var(--accent-espresso)] shadow-[2px_2px_0px_var(--accent-espresso)] hover:shadow-[3px_3px_0px_var(--accent-espresso)] hover:-translate-y-0.5 transition-all font-bold text-xs flex items-center gap-1.5">
+                            <Coins size={14} />
+                            Buy Tokens
+                        </button>
+                    </Link>
+                </div>
+
+                {/* Divider */}
+                <div className="h-5 w-px bg-[var(--accent-espresso)]/20"></div>
                 {/* Notification Bell */}
                 <div className="relative">
                     <button

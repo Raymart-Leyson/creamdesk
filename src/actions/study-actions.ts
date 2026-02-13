@@ -249,7 +249,7 @@ Rules:
 // This keeps questions grounded in what the student has actually studied.
 async function generateQuiz(
     openai: OpenAI,
-    supabase: ReturnType<typeof supabaseAdmin>,
+    supabase: any,
     notesContent: string,
     documentId: string,
     userId: string,
