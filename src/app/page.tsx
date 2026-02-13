@@ -39,7 +39,7 @@ export default function Home() {
           <Link href="/login">
             <CreamButton variant="secondary" className="px-6">Log In</CreamButton>
           </Link>
-          <Link href="/signup">
+          <Link href="/login">
             <CreamButton className="px-6">Sign Up</CreamButton>
           </Link>
         </div>
@@ -79,7 +79,7 @@ export default function Home() {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-16">
-            <Link href="/signup">
+            <Link href="/login">
               <CreamButton className="text-xl py-5 px-14 shadow-[6px_6px_0px_var(--accent-espresso)] hover:shadow-[8px_8px_0px_var(--accent-espresso)] hover:-translate-y-1 flex items-center gap-2">
                 Get Started Free
                 <ArrowRight size={20} />
@@ -146,7 +146,7 @@ export default function Home() {
         >
           <h2 className="text-4xl md:text-5xl font-black text-[var(--accent-espresso)] mb-4">Ready to get organized?</h2>
           <p className="text-xl text-[var(--accent-espresso)]/80 mb-8">Join thousands of users who've transformed their digital workflow.</p>
-          <Link href="/signup">
+          <Link href="/login">
             <CreamButton className="text-xl py-5 px-14 shadow-[6px_6px_0px_var(--accent-espresso)] hover:shadow-[8px_8px_0px_var(--accent-espresso)] hover:-translate-y-1">
               Start Free Today
             </CreamButton>
