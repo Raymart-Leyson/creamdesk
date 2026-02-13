@@ -2,7 +2,8 @@
 
 import OpenAI from "openai"
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { MAX_CHUNK_SIZE } from '@/lib/billing-utils'
+import { MAX_CHUNK_SIZE, calculateCost } from '@/lib/billing-utils'
+import { deductTokens, addTokens } from '@/actions/token-actions'
 
 type QuizType = 'multiple_choice' | 'identification' | 'enumeration' | 'mixed'
 
@@ -21,6 +22,7 @@ export async function generateStudyMaterials(
     }
 ) {
     const supabase = supabaseAdmin
+    let tokensDeducted = false
 
     try {
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -31,6 +33,17 @@ export async function generateStudyMaterials(
         if (!cleanText || cleanText.length < 10) {
             throw new Error("Document content is too short or empty to generate study materials.")
         }
+
+
+        // ─── Token Deduction ───────────────────────────────────────────────────
+        const estimatedCost = calculateCost(cleanText, type)
+        const deduction = await deductTokens(userId, estimatedCost)
+
+        if (!deduction.success) {
+            throw new Error(deduction.error || "Insufficient tokens to generate study materials.")
+        }
+
+        tokensDeducted = true
 
         // ─── Quiz goes through its own path (no chunking needed — uses notes) ─
         if (type === 'quiz') {
@@ -239,6 +252,10 @@ Rules:
         return []
 
     } catch (error: any) {
+        // Refund tokens on failure
+        if (tokensDeducted && typeof userId === 'string') {
+            await addTokens(userId, calculateCost(content, type))
+        }
         console.error('Generation Error:', error)
         throw new Error(error.message || 'Failed to generate study materials')
     }

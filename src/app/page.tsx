@@ -21,7 +21,7 @@ export default function Home() {
 
   const highlights = [
     "No credit card required",
-    "40 free AI tokens to start",
+    "20 free AI tokens to start",
     "Daily login streak rewards",
     "Desktop-style workspace"
   ]

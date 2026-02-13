@@ -15,12 +15,12 @@ export async function getUserTokens(userId: string): Promise<number> {
             if (error.code === 'PGRST116') {
                 const { data: newData, error: insertError } = await supabaseAdmin
                     .from('user_tokens')
-                    .insert({ user_id: userId, tokens: 40 })
+                    .insert({ user_id: userId, tokens: 20 })
                     .select('tokens')
                     .single()
 
                 if (insertError) throw insertError
-                return newData?.tokens || 40
+                return newData?.tokens || 20
             }
             throw error
         }
