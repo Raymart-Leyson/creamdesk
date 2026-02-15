@@ -3,7 +3,7 @@
 import OpenAI from "openai"
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { MAX_CHUNK_SIZE, calculateCost } from '@/lib/billing-utils'
-import { deductTokens, addTokens } from '@/actions/token-actions'
+import { deductTokens, addTokens, getTokenDetails } from '@/actions/token-actions'
 
 type QuizType = 'multiple_choice' | 'identification' | 'enumeration' | 'mixed'
 
@@ -47,8 +47,18 @@ export async function generateStudyMaterials(
 
         // ─── Quiz goes through its own path (no chunking needed — uses notes) ─
         if (type === 'quiz') {
+            // Check for Premium features
+            const quizType = options?.quizType ?? 'mixed'
+            if (['identification', 'enumeration'].includes(quizType)) {
+                const { expiresAt } = await getTokenDetails(userId)
+                // If no expiration date, they are a Free/Top-up user (assuming only Monthly plans set expiry)
+                if (!expiresAt) {
+                    throw new Error(`The '${quizType}' quiz mode is exclusive to Monthly Subscribers. Please upgrade to unlock.`)
+                }
+            }
+
             return generateQuiz(openai, supabase, cleanText, documentId, userId, {
-                quizType: options?.quizType ?? 'mixed',
+                quizType,
                 itemCount: options?.itemCount ?? 10,
             })
         }

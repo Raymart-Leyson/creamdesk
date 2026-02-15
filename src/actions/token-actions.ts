@@ -6,9 +6,37 @@ export async function getUserTokens(userId: string): Promise<number> {
     try {
         const { data, error } = await supabaseAdmin
             .from('user_tokens')
-            .select('tokens')
+            .select('tokens, expires_at')
             .eq('user_id', userId)
             .single()
+
+        // Check for expiration
+        if (data && data.expires_at) {
+            const expirationDate = new Date(data.expires_at)
+            const now = new Date()
+
+            if (now > expirationDate) {
+                // EXPIRED!
+                let newTokens = data.tokens
+
+                // Rule: If > 100, reset to 100. If <= 100, keep as is.
+                if (data.tokens > 100) {
+                    newTokens = 100
+                }
+
+                // Update DB: Set new token amount and remove expiration date
+                await supabaseAdmin
+                    .from('user_tokens')
+                    .update({
+                        tokens: newTokens,
+                        expires_at: null,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('user_id', userId)
+
+                return newTokens
+            }
+        }
 
         if (error) {
             // If no record exists, create one with 40 tokens (Free Tier)
@@ -29,6 +57,48 @@ export async function getUserTokens(userId: string): Promise<number> {
     } catch (error) {
         console.error('Error fetching tokens:', error)
         return 0
+    }
+}
+
+// New function to get full token details including expiration
+export async function getTokenDetails(userId: string): Promise<{ tokens: number; expiresAt: string | null }> {
+    try {
+        const { data, error } = await supabaseAdmin
+            .from('user_tokens')
+            .select('tokens, expires_at')
+            .eq('user_id', userId)
+            .single()
+
+        if (error) {
+            // If PZRST116 (not found), try creating default and return default
+            if (error.code === 'PGRST116') {
+                await getUserTokens(userId) // efficient trigger to create if not exists
+                return { tokens: 20, expiresAt: null }
+            }
+            throw error
+        }
+
+        // Return existing data (checking for expiry happens in getUserTokens generally, but for display we just show what's in DB or we can replicate logic. 
+        // Better to reuse the cleanup logic. I will call getUserTokens first to ensure cleanup, then return the fresh state.
+        // Actually getUserTokens returns number. The cleanup happens inside it.
+        // So:
+        const tokens = await getUserTokens(userId)
+
+        // Now fetch again to get the potentially updated expires_at (if it was cleared)
+        const { data: freshData } = await supabaseAdmin
+            .from('user_tokens')
+            .select('expires_at')
+            .eq('user_id', userId)
+            .single()
+
+        return {
+            tokens,
+            expiresAt: freshData?.expires_at || null
+        }
+
+    } catch (error) {
+        console.error('Error fetching token details:', error)
+        return { tokens: 0, expiresAt: null }
     }
 }
 
@@ -69,7 +139,7 @@ export async function deductTokens(userId: string, amount: number): Promise<{ su
     }
 }
 
-export async function addTokens(emailOrUserId: string, amount: number): Promise<{ success: boolean; newTotal?: number; error?: string }> {
+export async function addTokens(emailOrUserId: string, amount: number, expiryDays?: number): Promise<{ success: boolean; newTotal?: number; error?: string }> {
     try {
         let userId = emailOrUserId
 
@@ -93,9 +163,21 @@ export async function addTokens(emailOrUserId: string, amount: number): Promise<
 
         const currentTokens = await getUserTokens(userId)
 
+        // Calculate new expiration if days provided
+        let updates: any = {
+            tokens: currentTokens + amount,
+            updated_at: new Date().toISOString()
+        }
+
+        if (expiryDays) {
+            const expiryDate = new Date()
+            expiryDate.setDate(expiryDate.getDate() + expiryDays)
+            updates.expires_at = expiryDate.toISOString()
+        }
+
         const { data, error } = await supabaseAdmin
             .from('user_tokens')
-            .update({ tokens: currentTokens + amount, updated_at: new Date().toISOString() })
+            .update(updates)
             .eq('user_id', userId)
             .select('tokens')
             .single()

@@ -1,14 +1,15 @@
 "use client"
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { generateStudyMaterials } from '@/actions/study-actions'
-import { calculateCost, MAX_CHUNK_SIZE, formatCost } from '@/lib/billing-utils'
-import { deductTokens } from '@/actions/token-actions'
+import { calculateCost } from '@/lib/billing-utils'
+import { deductTokens, getTokenDetails } from '@/actions/token-actions'
 import {
     FileText, GraduationCap, ArrowRight, Loader2, BookOpen, BrainCircuit,
     AlertTriangle, Trash2, CheckCircle, Circle, X, ChevronLeft, ChevronRight,
-    ClipboardList, Trophy, RotateCcw, Check
+    ClipboardList, Trophy, RotateCcw, Check, Lock
 } from 'lucide-react'
+import Link from 'next/link'
 
 interface Doc {
     id: string
@@ -51,15 +52,28 @@ interface QuizState {
     score: number
 }
 
+interface StudyMaterialItem {
+    db_id: string
+    id?: string
+    title?: string
+    content?: string
+    front?: string
+    back?: string
+    quizType?: string
+    questions?: QuizQuestion[]
+    created_at: string
+}
+
 export default function StudyApp({ windowId }: { windowId: string }) {
     const [documents, setDocuments] = useState<Doc[]>([])
     const [activeDoc, setActiveDoc] = useState<Doc | null>(null)
     const [loading, setLoading] = useState(true)
     const [activeTab, setActiveTab] = useState<'notes' | 'flashcards' | 'quiz'>('notes')
-    const [generatedContent, setGeneratedContent] = useState<any>(null)
+    const [generatedContent, setGeneratedContent] = useState<StudyMaterialItem[] | null>(null)
     const [isGenerating, setIsGenerating] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [savedMaterials, setSavedMaterials] = useState<any[]>([])
+    const [savedMaterials, setSavedMaterials] = useState<StudyMaterialItem[]>([])
+    const [isSubscriber, setIsSubscriber] = useState(false)
 
     // Modal state
     const [modalOpen, setModalOpen] = useState(false)
@@ -67,7 +81,7 @@ export default function StudyApp({ windowId }: { windowId: string }) {
 
     // Play mode state (for flashcards)
     const [playMode, setPlayMode] = useState(false)
-    const [shuffledItems, setShuffledItems] = useState<any[]>([])
+    const [shuffledItems, setShuffledItems] = useState<StudyMaterialItem[]>([])
     const [showAnswer, setShowAnswer] = useState(false)
 
     // Selection state
@@ -82,6 +96,7 @@ export default function StudyApp({ windowId }: { windowId: string }) {
     const [quizType, setQuizType] = useState<QuizType>('mixed')
     const [quizItemCount, setQuizItemCount] = useState(10)
     const [quizState, setQuizState] = useState<QuizState | null>(null)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [quizId, setQuizId] = useState<string | null>(null)
     const [enumInputs, setEnumInputs] = useState<Record<number, string[]>>({})
 
@@ -90,33 +105,29 @@ export default function StudyApp({ windowId }: { windowId: string }) {
     const [contentLength, setContentLength] = useState<number>(0)
     const [isCalculatingCost, setIsCalculatingCost] = useState(false)
 
-    // ─── Load Documents ──────────────────────────────────────────────────────────
-    useEffect(() => { fetchDocuments() }, [])
+    // ─── Load Documents & User Status ──────────────────────────────────────────
+    useEffect(() => {
+        const fetchDocuments = async () => {
+            try {
+                const { data: { user } } = await supabase.auth.getUser()
+                if (!user) { setLoading(false); return }
 
-    const fetchDocuments = async () => {
-        try {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) { setLoading(false); return }
-            const { data } = await supabase
-                .from('documents').select('*').eq('user_id', user.id)
-                .order('updated_at', { ascending: false })
-            if (data) setDocuments(data)
-        } catch (e) { console.error('Error fetching docs:', e) }
-        finally { setLoading(false) }
-    }
+                // Check subscription status
+                const { expiresAt } = await getTokenDetails(user.id)
+                setIsSubscriber(!!expiresAt)
+
+                const { data } = await supabase
+                    .from('documents').select('*').eq('user_id', user.id)
+                    .order('updated_at', { ascending: false })
+                if (data) setDocuments(data)
+            } catch (e) { console.error('Error fetching docs:', e) }
+            finally { setLoading(false) }
+        }
+        fetchDocuments()
+    }, [])
 
     // ─── Load Saved Materials ────────────────────────────────────────────────────
-    useEffect(() => {
-        if (activeDoc) {
-            fetchSavedMaterials()
-        } else {
-            setSavedMaterials([])
-            setGeneratedContent(null)
-            setQuizState(null)
-        }
-    }, [activeDoc, activeTab])
-
-    const fetchSavedMaterials = async () => {
+    const fetchSavedMaterials = useCallback(async () => {
         if (!activeDoc) return
         try {
             const dbType = activeTab === 'notes' ? 'note' : activeTab === 'flashcards' ? 'flashcard' : 'quiz'
@@ -129,7 +140,7 @@ export default function StudyApp({ windowId }: { windowId: string }) {
             if (data && data.length > 0) {
                 if (activeTab === 'quiz') {
                     // Load all quiz sessions as list items
-                    const materials = data.map((row, index) => ({
+                    const materials: StudyMaterialItem[] = data.map((row, index) => ({
                         ...row.content,
                         db_id: row.id,
                         title: `Quiz ${index + 1}`,
@@ -139,7 +150,7 @@ export default function StudyApp({ windowId }: { windowId: string }) {
                     setQuizState(null)
                     setQuizId(null)
                 } else {
-                    const materials = data.map(row => ({ ...row.content, db_id: row.id }))
+                    const materials: StudyMaterialItem[] = data.map(row => ({ ...row.content, db_id: row.id }))
                     setSavedMaterials(materials)
                 }
                 setGeneratedContent(null)
@@ -150,38 +161,51 @@ export default function StudyApp({ windowId }: { windowId: string }) {
                     setQuizId(null)
                 }
             }
-        } catch (err: any) { console.error('Fetch error:', err) }
-    }
+        } catch (err) { console.error('Fetch error:', err) }
+    }, [activeDoc, activeTab])
+
+    useEffect(() => {
+        if (activeDoc) {
+            fetchSavedMaterials()
+        } else {
+            setSavedMaterials([])
+            setGeneratedContent(null)
+            setQuizState(null)
+        }
+    }, [activeDoc, activeTab, fetchSavedMaterials])
 
     // ─── Estimate cost ───────────────────────────────────────────────────────────
-    useEffect(() => { estimateGenerationCost() }, [activeDoc, activeTab])
-
-    const estimateGenerationCost = async () => {
-        if (!activeDoc) { setEstimatedCost(0); setContentLength(0); return }
-        setIsCalculatingCost(true)
-        try {
-            let content = ''
-            if (activeTab === 'notes') {
-                const { data } = await supabase.from('documents').select('content')
-                    .eq('id', activeDoc.id).single()
-                content = data?.content || ''
-            } else {
-                // Flashcards and Quiz both derive from notes
-                const { data: existingNotes } = await supabase.from('study_materials')
-                    .select('content').eq('document_id', activeDoc.id).eq('type', 'note')
-                if (existingNotes && existingNotes.length > 0) {
-                    content = existingNotes.map(note => {
-                        const c = typeof note.content === 'string' ? JSON.parse(note.content) : note.content
-                        return `**${c.title}**\n${c.content}`
-                    }).join('\n\n')
+    useEffect(() => {
+        const estimateGenerationCost = async () => {
+            if (!activeDoc) { setEstimatedCost(0); setContentLength(0); return }
+            setIsCalculatingCost(true)
+            try {
+                let content = ''
+                if (activeTab === 'notes') {
+                    const { data } = await supabase.from('documents').select('content')
+                        .eq('id', activeDoc.id).single()
+                    content = data?.content || ''
+                } else {
+                    // Flashcards and Quiz both derive from notes
+                    const { data: existingNotes } = await supabase.from('study_materials')
+                        .select('content').eq('document_id', activeDoc.id).eq('type', 'note')
+                    if (existingNotes && existingNotes.length > 0) {
+                        content = existingNotes.map(note => {
+                            const c = typeof note.content === 'string' ? JSON.parse(note.content) : note.content
+                            return `**${c.title}**\n${c.content}`
+                        }).join('\n\n')
+                    }
                 }
-            }
-            const cleanText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-            setContentLength(cleanText.length)
-            setEstimatedCost(calculateCost(content, activeTab === 'quiz' ? 'flashcards' : activeTab))
-        } catch (e) { console.error('Cost estimation error:', e) }
-        finally { setIsCalculatingCost(false) }
-    }
+                const cleanText = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+                setContentLength(cleanText.length)
+                setEstimatedCost(calculateCost(content, activeTab === 'quiz' ? 'flashcards' : activeTab))
+            } catch (e) { console.error('Cost estimation error:', e) }
+            finally { setIsCalculatingCost(false) }
+        }
+        estimateGenerationCost()
+    }, [activeDoc, activeTab])
+
+    const isPremiumQuizSelected = activeTab === 'quiz' && ['identification', 'enumeration'].includes(quizType)
 
     // ─── Generate ────────────────────────────────────────────────────────────────
     const handleGenerate = async () => {
@@ -227,9 +251,9 @@ export default function StudyApp({ windowId }: { windowId: string }) {
 
             if (activeTab === 'quiz') {
                 // Generate quiz via server action
-                const result = await generateStudyMaterials(
+                await generateStudyMaterials(
                     contentToAnalyze,
-                    'quiz' as any,
+                    'quiz',
                     activeDoc.id,
                     user.id,
                     { quizType, itemCount: quizItemCount }
@@ -237,20 +261,6 @@ export default function StudyApp({ windowId }: { windowId: string }) {
 
                 // Refresh saved materials to show new quiz
                 await fetchSavedMaterials()
-
-                // Auto-open new quiz
-                /*
-                const questions: QuizQuestion[] = result?.questions || result || []
-                setQuizState({
-                    questions,
-                    userAnswers: questions.map(q => q.type === 'enumeration' ? [] : ''),
-                    submitted: false,
-                    score: 0,
-                })
-                setEnumInputs({})
-                const newQuizId = result.db_id // Need to ensure generate returns db_id
-                if (newQuizId) setQuizId(newQuizId)
-                */
             } else {
                 const result = await generateStudyMaterials(
                     contentToAnalyze,
@@ -262,9 +272,9 @@ export default function StudyApp({ windowId }: { windowId: string }) {
                 setGeneratedContent(result)
                 setSavedMaterials(result)
             }
-        } catch (err: any) {
+        } catch (err) {
             console.error('Generation error:', err)
-            setError(err.message || 'Failed to generate study materials')
+            setError(err instanceof Error ? err.message : 'Failed to generate study materials')
         } finally {
             setIsGenerating(false)
         }
@@ -319,7 +329,7 @@ export default function StudyApp({ windowId }: { windowId: string }) {
         setEnumInputs({})
     }
 
-    const openQuiz = (quizItem: any) => {
+    const openQuiz = (quizItem: StudyMaterialItem) => {
         const questions: QuizQuestion[] = quizItem.questions || []
         setQuizState({
             questions,
@@ -354,13 +364,13 @@ export default function StudyApp({ windowId }: { windowId: string }) {
             await fetchSavedMaterials()
             setSelectedIds(new Set())
             setIsSelectionMode(false)
-        } catch (err: any) {
-            setError(err.message || 'Failed to delete items.')
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to delete items.')
         }
     }
 
     // ─── Play mode ───────────────────────────────────────────────────────────────
-    const shuffleArray = (array: any[]) => {
+    const shuffleArray = (array: StudyMaterialItem[]) => {
         const shuffled = [...array]
         for (let i = shuffled.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -384,7 +394,7 @@ export default function StudyApp({ windowId }: { windowId: string }) {
         if (modalIndex > 0) { setModalIndex(modalIndex - 1); setShowAnswer(false) }
     }
 
-    const displayItems = savedMaterials.length > 0 ? savedMaterials : (generatedContent || [])
+    const displayItems: StudyMaterialItem[] = savedMaterials.length > 0 ? savedMaterials : (generatedContent || [])
 
     // ─── Render ──────────────────────────────────────────────────────────────────
     return (
@@ -399,7 +409,11 @@ export default function StudyApp({ windowId }: { windowId: string }) {
                     </h2>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                    {documents.length === 0 ? (
+                    {loading ? (
+                        <div className="flex justify-center p-8 opacity-50">
+                            <Loader2 className="animate-spin" />
+                        </div>
+                    ) : documents.length === 0 ? (
                         <div className="text-center p-4 opacity-50 text-sm">No documents found.</div>
                     ) : (
                         documents.map(doc => (
@@ -416,6 +430,23 @@ export default function StudyApp({ windowId }: { windowId: string }) {
                             </button>
                         ))
                     )}
+                </div>
+
+                {/* Plan Status */}
+                <div className="p-4 border-t-2 border-[var(--accent-espresso)] bg-[var(--bg-cream)]">
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold opacity-60">My Plan</span>
+                        {isSubscriber ? (
+                            <div className="flex items-center gap-1 text-xs font-black bg-gradient-to-r from-yellow-300 to-amber-400 px-2 py-1 rounded-full border border-[var(--accent-espresso)] shadow-sm">
+                                <Trophy size={12} />
+                                MONTHLY
+                            </div>
+                        ) : (
+                            <div className="text-xs font-black bg-gray-200 text-gray-500 px-2 py-1 rounded-full border border-gray-400/50">
+                                FREE
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -499,16 +530,21 @@ export default function StudyApp({ windowId }: { windowId: string }) {
                                         {/* Quiz type selector */}
                                         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--bg-surface)] border-2 border-[var(--accent-espresso)] rounded-lg">
                                             <span className="text-xs font-bold opacity-60">Type:</span>
-                                            <select
-                                                value={quizType}
-                                                onChange={e => setQuizType(e.target.value as QuizType)}
-                                                className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
-                                            >
-                                                <option value="mixed">Mixed</option>
-                                                <option value="multiple_choice">Multiple Choice</option>
-                                                <option value="identification">Identification</option>
-                                                <option value="enumeration">Enumeration</option>
-                                            </select>
+                                            <div className="relative flex items-center gap-1">
+                                                <select
+                                                    value={quizType}
+                                                    onChange={e => setQuizType(e.target.value as QuizType)}
+                                                    className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer pr-4 appearance-none"
+                                                >
+                                                    <option value="mixed">Mixed</option>
+                                                    <option value="multiple_choice">Multiple Choice</option>
+                                                    <option value="identification">Identification {!isSubscriber ? '(Premium)' : ''}</option>
+                                                    <option value="enumeration">Enumeration {!isSubscriber ? '(Premium)' : ''}</option>
+                                                </select>
+                                                {isPremiumQuizSelected && !isSubscriber && (
+                                                    <Lock size={12} className="text-[var(--accent-espresso)]/50" />
+                                                )}
+                                            </div>
                                         </div>
                                         {/* Item count */}
                                         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--bg-surface)] border-2 border-[var(--accent-espresso)] rounded-lg">
@@ -535,14 +571,25 @@ export default function StudyApp({ windowId }: { windowId: string }) {
                                 )}
 
                                 {/* Generate Button */}
-                                <button
-                                    onClick={handleGenerate}
-                                    disabled={isGenerating || isSelectionMode}
-                                    className="flex items-center gap-2 bg-[var(--cream-highlight)] border-2 border-[var(--accent-espresso)] px-4 py-2 rounded-lg font-bold shadow-[3px_3px_0px_var(--accent-espresso)] hover:translate-y-[-2px] hover:shadow-[5px_5px_0px_var(--accent-espresso)] active:translate-y-[0px] transition-all disabled:opacity-50 disabled:pointer-events-none"
-                                >
-                                    {isGenerating ? <Loader2 className="animate-spin" size={18} /> : <BrainCircuit size={18} />}
-                                    {activeTab === 'notes' ? 'Generate Notes' : activeTab === 'flashcards' ? 'Generate Flashcards' : 'Generate Quiz'}
-                                </button>
+                                {isPremiumQuizSelected && !isSubscriber ? (
+                                    <Link href="/shop">
+                                        <button
+                                            className="flex items-center gap-2 bg-gradient-to-r from-yellow-300 to-amber-400 text-[var(--accent-espresso)] border-2 border-[var(--accent-espresso)] px-4 py-2 rounded-lg font-black shadow-[3px_3px_0px_var(--accent-espresso)] hover:translate-y-[-2px] hover:shadow-[5px_5px_0px_var(--accent-espresso)] active:translate-y-[0px] transition-all"
+                                        >
+                                            <Lock size={16} />
+                                            Upgrade to Unlock
+                                        </button>
+                                    </Link>
+                                ) : (
+                                    <button
+                                        onClick={handleGenerate}
+                                        disabled={isGenerating || isSelectionMode}
+                                        className="flex items-center gap-2 bg-[var(--cream-highlight)] border-2 border-[var(--accent-espresso)] px-4 py-2 rounded-lg font-bold shadow-[3px_3px_0px_var(--accent-espresso)] hover:translate-y-[-2px] hover:shadow-[5px_5px_0px_var(--accent-espresso)] active:translate-y-[0px] transition-all disabled:opacity-50 disabled:pointer-events-none"
+                                    >
+                                        {isGenerating ? <Loader2 className="animate-spin" size={18} /> : <BrainCircuit size={18} />}
+                                        {activeTab === 'notes' ? 'Generate Notes' : activeTab === 'flashcards' ? 'Generate Flashcards' : 'Generate Quiz'}
+                                    </button>
+                                )}
                             </div>
                         </div>
 
@@ -570,6 +617,7 @@ export default function StudyApp({ windowId }: { windowId: string }) {
                                     onSubmit={submitQuiz}
                                     onReset={resetQuiz}
                                     onClose={closeQuiz}
+                                    isSubscriber={isSubscriber}
                                 />
                             ) : displayItems.length > 0 ? (
                                 <div className="max-w-7xl mx-auto pb-20">
@@ -582,7 +630,7 @@ export default function StudyApp({ windowId }: { windowId: string }) {
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                        {displayItems.map((item: any, idx: number) => (
+                                        {displayItems.map((item, idx) => (
                                             <CardGridItem
                                                 key={idx} item={item} type={activeTab} index={idx}
                                                 isSelectionMode={isSelectionMode} isSelected={selectedIds.has(item.db_id)}
@@ -728,6 +776,7 @@ interface QuizViewProps {
     onSubmit: () => void
     onReset: () => void
     onClose: () => void
+    isSubscriber?: boolean
 }
 
 function QuizView({ quizState, enumInputs, onAnswer, onEnumInput, onSubmit, onReset, onClose }: QuizViewProps) {
@@ -968,7 +1017,7 @@ function QuizView({ quizState, enumInputs, onAnswer, onEnumInput, onSubmit, onRe
 
 // ─── Grid Card Component ───────────────────────────────────────────────────────
 interface CardGridItemProps {
-    item: any
+    item: StudyMaterialItem
     type: 'notes' | 'flashcards' | 'quiz'
     index: number
     isSelectionMode?: boolean

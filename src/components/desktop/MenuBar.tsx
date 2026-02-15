@@ -1,10 +1,10 @@
 "use client"
 import { useEffect, useState } from 'react'
-import { format, isToday, isSameDay } from 'date-fns'
+import { format, isToday, isSameDay, formatDistanceToNow } from 'date-fns'
 import Link from 'next/link'
 import { Bell, Calendar, Clock, MapPin, X, Coins, Plus, Settings, Flame, Crown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getUserTokens, addTokens } from '@/actions/token-actions'
+import { getUserTokens, addTokens, getTokenDetails } from '@/actions/token-actions'
 import { updateStreak, getStreak } from '@/actions/streak-actions'
 import { useDesktopStore } from '@/store/useStore'
 
@@ -22,6 +22,8 @@ export default function MenuBar() {
     const [events, setEvents] = useState<AppEvent[]>([])
     const [showNotifications, setShowNotifications] = useState(false)
     const [tokens, setTokens] = useState<number>(0)
+    const [tokenExpiry, setTokenExpiry] = useState<string | null>(null)
+    const [showTokenDetails, setShowTokenDetails] = useState(false)
 
     const [currentStreak, setCurrentStreak] = useState(0)
     const [longestStreak, setLongestStreak] = useState(0)
@@ -76,8 +78,9 @@ export default function MenuBar() {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) return
 
-            const tokenCount = await getUserTokens(user.id)
+            const { tokens: tokenCount, expiresAt } = await getTokenDetails(user.id)
             setTokens(tokenCount)
+            setTokenExpiry(expiresAt)
         } catch (e) {
             console.error('Failed to fetch tokens:', e)
         }
@@ -114,13 +117,61 @@ export default function MenuBar() {
             {/* Right: Utilities */}
             <div className="flex items-center gap-3 text-xs font-bold text-[var(--accent-espresso)]">
                 {/* Token Info */}
-                <div className="flex items-center gap-3">
+                <div className="relative flex items-center gap-3">
                     {/* Token Display */}
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border-2 border-yellow-600 rounded-lg shadow-sm">
+                    <button
+                        onClick={() => setShowTokenDetails(!showTokenDetails)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border-2 border-yellow-600 rounded-lg shadow-sm hover:bg-yellow-100 transition-colors"
+                    >
                         <Coins size={14} className="text-yellow-700" />
                         <span className="font-bold text-yellow-700 text-sm">{tokens}</span>
                         <span className="text-yellow-600/50 text-xs">tokens</span>
-                    </div>
+                    </button>
+
+                    {/* Token Details Dropdown */}
+                    {showTokenDetails && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowTokenDetails(false)} />
+                            <div className="absolute right-0 top-full mt-2 w-72 bg-white border-2 border-[var(--accent-espresso)] rounded-xl shadow-[4px_4px_0px_var(--accent-espresso)] z-50 overflow-hidden text-left">
+                                <div className="p-3 bg-yellow-50 border-b-2 border-yellow-600/20 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Coins size={16} className="text-yellow-700" />
+                                        <span className="font-bold text-[var(--accent-espresso)]">Token Status</span>
+                                    </div>
+                                    <button onClick={() => setShowTokenDetails(false)}>
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                                <div className="p-4 space-y-3">
+                                    {tokenExpiry ? (
+                                        <>
+                                            <div className="bg-orange-50 p-2 rounded border border-orange-200">
+                                                <div className="text-[10px] uppercase font-bold text-orange-600 mb-1">Expires In</div>
+                                                <div className="font-black text-lg text-orange-700">
+                                                    {formatDistanceToNow(new Date(tokenExpiry), { addSuffix: true })}
+                                                </div>
+                                                <div className="text-xs text-orange-600/80 mt-1">
+                                                    {format(new Date(tokenExpiry), "MMMM d, yyyy 'at' h:mm a")}
+                                                </div>
+                                            </div>
+                                            <div className="text-xs text-[var(--accent-espresso)]/80 leading-relaxed">
+                                                <p className="font-bold mb-1">What happens when it expires?</p>
+                                                <ul className="list-disc pl-4 space-y-1">
+                                                    <li>If you have <strong>more than 100</strong> tokens, your balance will reset to <strong>100</strong>.</li>
+                                                    <li>If you have <strong>100 or less</strong>, you keep all your tokens!</li>
+                                                </ul>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="text-center py-2">
+                                            <div className="text-sm font-bold text-[var(--accent-espresso)]">No Expiration Date</div>
+                                            <p className="text-xs text-[var(--accent-espresso)]/60 mt-1">Your tokens are safe forever!</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </>
+                    )}
 
                     {/* Buy Tokens Button */}
                     <Link href="/shop">

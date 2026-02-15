@@ -23,6 +23,14 @@ The payment system has been implemented using InstaPay (Philippines) with manual
    - Package name purchased
 5. **Receive Tokens**: Admin verifies and adds tokens (usually within 24 hours)
 
+## International Payments (Wise / PayPal)
+
+For customers outside the Philippines:
+1. Select "International" toggle on the shop page to see USD pricing
+2. Message the Facebook page to request Wise or PayPal payment details
+3. Send payment and proof via Facebook
+4. Admin manually verifies and adds tokens
+
 ## Admin Flow
 
 1. **Receive Payment Proof**: Customer messages Facebook page
